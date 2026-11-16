@@ -1,0 +1,42 @@
+[package]
+name = "scrapeunblocker"
+version = "0.19.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Official Rust client for the ScrapeUnblocker API - scrape any page past Cloudflare, DataDome, PerimeterX and Akamai as HTML, Markdown or parsed JSON."
+license = "MIT"
+repository = "https://github.com/ScrapeUnblocker/scrapeunblocker-rust"
+homepage = "https://www.scrapeunblocker.com/?utm_source=crates.io&utm_medium=integration&utm_campaign=rust-sdk"
+documentation = "https://docs.rs/scrapeunblocker"
+readme = "README.md"
+keywords = ["scraping", "web-scraping", "anti-bot", "cloudflare", "api-client"]
+categories = ["web-programming::http-client", "api-bindings"]
+include = ["src/**/*.rs", "Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE"]
+
+[features]
+default = ["default-tls"]
+# TLS backend, passed through to reqwest. Turn off default features to pick another.
+default-tls = ["reqwest/default-tls"]
+rustls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
+# A blocking client (`scrapeunblocker::blocking::Client`) for code without an async runtime.
+blocking = ["tokio/rt", "tokio/net"]
+
+[dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["http2", "system-proxy"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+wiremock = "0.6"
+
+[package.metadata.docs.rs]
+features = ["blocking"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "blocking"
+required-features = ["blocking"]
