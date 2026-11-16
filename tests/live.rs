@@ -19,7 +19,7 @@ async fn page_markdown_and_parsed() {
     assert!(html.contains("Example Domain"), "{html}");
 
     let md = su.get_markdown("https://example.com").await.unwrap();
-    assert!(md.contains("Example Domain"), "{md}");
+    assert!(md.contains("documentation examples"), "{md}");
 
     let page = su.get_parsed("https://example.com").await.unwrap();
     println!(

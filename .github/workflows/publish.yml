@@ -26,9 +26,19 @@ jobs:
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != v$version"; exit 1; }
-      - run: cargo test --all-features
-      - uses: rust-lang/crates-io-auth-action@v1
+      - name: Skip a version crates.io already has
+        id: published
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          code=$(curl -s -o /dev/null -w '%{http_code}' -A "scrapeunblocker-rust-release" \
+            "https://crates.io/api/v1/crates/scrapeunblocker/$version")
+          echo "exists=$([ "$code" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.published.outputs.exists != 'true'
+        run: cargo test --all-features
+      - if: steps.published.outputs.exists != 'true'
+        uses: rust-lang/crates-io-auth-action@v1
         id: auth
-      - run: cargo publish
+      - if: steps.published.outputs.exists != 'true'
+        run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
