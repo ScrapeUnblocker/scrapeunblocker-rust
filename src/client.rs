@@ -9,7 +9,7 @@ use reqwest::Url;
 use serde_json::Value;
 
 use crate::error::{api_error, Error, Result};
-use crate::models::{PageResult, ParsedPage, Step};
+use crate::models::{CapturedPage, PageResult, ParsedPage, Step};
 use crate::request::{executable, Call, Decode};
 
 /// The production API host.
@@ -318,6 +318,27 @@ impl Client {
         GetPageWithCookies::new(self.clone(), url.into())
     }
 
+    /// Fetch a URL and return the page's own XHR/fetch responses with it.
+    ///
+    /// Many sites render from a JSON API the page calls itself, and that API
+    /// often refuses direct requests (the page signs each call). The page is
+    /// rendered in a real browser and every XHR/fetch response whose URL
+    /// contains `capture_xhr` (e.g. `"/api/search"`) comes back in the order
+    /// the page received it: up to 20 responses and 10 MB of bodies. Add
+    /// [`steps`](GetPageWithXhr::steps) to make the page fire the call. A
+    /// failed step returns [`ApiErrorKind::StepFailed`](crate::ApiErrorKind::StepFailed)
+    /// whose [`StepFailure::xhr`](crate::StepFailure::xhr) holds what the page
+    /// received before that.
+    ///
+    /// Calls `POST /getPageSource` with `capture_xhr`.
+    pub fn get_page_with_xhr(
+        &self,
+        url: impl Into<String>,
+        capture_xhr: impl Into<String>,
+    ) -> GetPageWithXhr {
+        GetPageWithXhr::new(self.clone(), url.into(), capture_xhr.into())
+    }
+
     /// Run a Google search and return the parsed SERP as JSON.
     ///
     /// The result has `organic` results and `topAds` / `bottomAds` (title,
@@ -560,6 +581,33 @@ impl<C> GetPageWithCookies<C> {
 }
 
 executable!(GetPageWithCookies -> PageResult);
+
+/// Request builder for [`Client::get_page_with_xhr`]. Await it for a [`CapturedPage`].
+#[derive(Debug, Clone)]
+#[must_use = "a request does nothing until it is awaited or sent"]
+pub struct GetPageWithXhr<C = Client> {
+    client: C,
+    call: Call,
+}
+
+impl<C> GetPageWithXhr<C> {
+    pub(crate) fn new(client: C, url: String, capture_xhr: String) -> Self {
+        let mut call = Call::new("/getPageSource");
+        call.query.set("url", url);
+        call.query.set("capture_xhr", capture_xhr);
+        GetPageWithXhr { client, call }
+    }
+
+    /// ISO country code to route the request through, e.g. `"us"`.
+    pub fn proxy_country(mut self, country: impl Into<String>) -> Self {
+        self.call.query.set("proxy_country", country.into());
+        self
+    }
+
+    steps_setter!();
+}
+
+executable!(GetPageWithXhr -> CapturedPage);
 
 /// Request builder for [`Client::serp`]. Await it for the SERP JSON.
 #[derive(Debug, Clone)]

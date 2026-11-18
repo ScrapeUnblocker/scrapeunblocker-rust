@@ -20,6 +20,8 @@
 
 use std::fmt;
 
+use crate::models::{xhr_calls, XhrCall};
+
 /// A `Result` whose error is this crate's [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -216,6 +218,9 @@ pub struct StepFailure {
     pub selector: Option<String>,
     /// The page HTML at the moment the step failed.
     pub html: Option<String>,
+    /// With [`Client::get_page_with_xhr`](crate::Client::get_page_with_xhr):
+    /// the responses the page received before the step failed; otherwise `None`.
+    pub xhr: Option<Vec<XhrCall>>,
 }
 
 /// Map an error response to an [`ApiError`].
@@ -286,6 +291,7 @@ pub(crate) fn api_error(
             reason: field("reason"),
             selector: field("selector"),
             html: field("html"),
+            xhr: xhr_calls(json.as_ref().and_then(|j| j.get("xhr"))),
         };
         let message = format!(
             "Browser step {} ({}) failed: {}",

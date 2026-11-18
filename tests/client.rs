@@ -542,3 +542,74 @@ fn blocking_client_sends_the_same_request() {
         .unwrap();
     assert_eq!(data["results"][0], 1);
 }
+
+#[tokio::test]
+async fn get_page_with_xhr_returns_the_captured_calls() {
+    let server = MockServer::start().await;
+    let payload = json!({
+        "html": "<html>results</html>",
+        "xhr": [
+            {"url": "https://api.example.com/v2/items?page=1", "method": "GET", "status": 200,
+             "content_type": "application/json", "body": "{\"items\":[1,2]}"},
+            {"url": "https://api.example.com/v2/items?page=2", "method": "GET", "status": 403,
+             "content_type": null, "body": null, "body_omitted": "binary"}
+        ],
+        "xhr_truncated": false,
+        "proxy": "us"
+    });
+    Mock::given(method("POST"))
+        .and(path("/getPageSource"))
+        .and(query_param("capture_xhr", "/v2/items"))
+        .and(query_param("proxy_country", "us"))
+        .and(query_param_is_missing("get_cookies"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&payload))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let su = client(&server).await;
+    let page = su
+        .get_page_with_xhr("https://example.com/search", "/v2/items")
+        .proxy_country("us")
+        .steps([Step::click("#more")])
+        .await
+        .unwrap();
+    assert_eq!(page.html.as_deref(), Some("<html>results</html>"));
+    assert_eq!(page.proxy.as_deref(), Some("us"));
+    assert!(!page.xhr_truncated);
+    assert_eq!(page.xhr.len(), 2);
+    assert_eq!(page.xhr[0].status, 200);
+    assert_eq!(page.xhr[0].json().unwrap(), json!({"items": [1, 2]}));
+    assert_eq!(page.xhr[1].body, None);
+    assert_eq!(page.xhr[1].body_omitted.as_deref(), Some("binary"));
+    assert!(page.xhr[1].json().is_err());
+
+    let req = &server.received_requests().await.unwrap()[0];
+    let steps: serde_json::Value = serde_json::from_str(&query_values(req, "steps")[0]).unwrap();
+    assert_eq!(steps, json!([{"action": "click", "selector": "#more"}]));
+}
+
+#[tokio::test]
+async fn step_failure_with_capture_carries_the_calls() {
+    let body = json!({
+        "error": "step_failed", "step_index": 0, "action": "click", "reason": "gone",
+        "xhr": [{"url": "https://api.example.com/v2/items", "method": "GET", "status": 200,
+                 "body": "{}"}]
+    })
+    .to_string();
+    let err = error_for(422, &body, &[]).await;
+    let step = err.api().unwrap().step_failed.as_ref().unwrap();
+    let calls = step.xhr.as_ref().unwrap();
+    assert_eq!(calls[0].url, "https://api.example.com/v2/items");
+
+    let plain = json!({"error": "step_failed", "step_index": 0, "action": "click"}).to_string();
+    let err = error_for(422, &plain, &[]).await;
+    assert!(err
+        .api()
+        .unwrap()
+        .step_failed
+        .as_ref()
+        .unwrap()
+        .xhr
+        .is_none());
+}

@@ -76,6 +76,91 @@ impl PageResult {
     }
 }
 
+/// One XHR/fetch response the page received, from
+/// [`Client::get_page_with_xhr`](crate::Client::get_page_with_xhr).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct XhrCall {
+    /// The URL the page requested.
+    pub url: String,
+    /// The HTTP method, e.g. `"GET"`.
+    pub method: String,
+    /// The status the site answered; `0` when the request failed without a response.
+    pub status: u16,
+    /// The response's `Content-Type`.
+    pub content_type: Option<String>,
+    /// The response body as text; `None` when it was not returned (see `body_omitted`).
+    pub body: Option<String>,
+    /// Why `body` is `None`: `"binary"`, `"size_limit"`, `"in_flight"`,
+    /// `"redirect"`, `"unavailable"` or `"request_failed"`.
+    pub body_omitted: Option<String>,
+}
+
+impl XhrCall {
+    pub(crate) fn from_value(item: &Value) -> Self {
+        let text = |key: &str| item.get(key).and_then(Value::as_str).map(str::to_owned);
+        XhrCall {
+            url: text("url").unwrap_or_default(),
+            method: text("method").unwrap_or_else(|| "GET".to_owned()),
+            status: item
+                .get("status")
+                .and_then(Value::as_u64)
+                .and_then(|s| u16::try_from(s).ok())
+                .unwrap_or(0),
+            content_type: text("content_type"),
+            body: text("body"),
+            body_omitted: text("body_omitted"),
+        }
+    }
+
+    /// The body parsed as JSON. Fails when there is no body or it is not JSON.
+    pub fn json(&self) -> serde_json::Result<Value> {
+        serde_json::from_str(self.body.as_deref().unwrap_or(""))
+    }
+}
+
+/// A page plus the XHR/fetch responses it received, from
+/// [`Client::get_page_with_xhr`](crate::Client::get_page_with_xhr).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct CapturedPage {
+    /// The rendered page.
+    pub html: Option<String>,
+    /// The matching responses in the order the page received them.
+    pub xhr: Vec<XhrCall>,
+    /// `true` when more responses matched than were returned.
+    pub xhr_truncated: bool,
+    /// Country of the exit that served the request.
+    pub proxy: Option<String>,
+    /// The full JSON payload as returned by the API.
+    pub raw: Value,
+}
+
+impl CapturedPage {
+    pub(crate) fn from_value(payload: Value) -> Self {
+        CapturedPage {
+            html: payload
+                .get("html")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            xhr: xhr_calls(payload.get("xhr")).unwrap_or_default(),
+            xhr_truncated: payload.get("xhr_truncated") == Some(&Value::Bool(true)),
+            proxy: payload
+                .get("proxy")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            raw: payload,
+        }
+    }
+}
+
+/// The `xhr` array of a response, or `None` when it is absent.
+pub(crate) fn xhr_calls(value: Option<&Value>) -> Option<Vec<XhrCall>> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| items.iter().map(XhrCall::from_value).collect())
+}
+
 /// One browser action for the `steps` option of
 /// [`Client::get_page_source`](crate::Client::get_page_source) and
 /// [`Client::get_markdown`](crate::Client::get_markdown).

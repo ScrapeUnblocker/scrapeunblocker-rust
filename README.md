@@ -207,6 +207,34 @@ let page = su.get_page_with_cookies("https://example.com").await?;
 println!("{:?} {} {:?}", page.html, page.cookies, page.proxy);
 ```
 
+## The page's own API calls (XHR/fetch)
+
+Many sites render from a JSON API the page calls itself, and that API often
+refuses direct requests. `get_page_with_xhr` renders the page in a real browser
+and returns every XHR/fetch response whose URL contains the fragment you pass,
+in the order the page received them. Add `steps` to make the page fire the call
+(a search, "load more").
+
+```rust
+use scrapeunblocker::Step;
+
+let page = su
+    .get_page_with_xhr("https://quotes.toscrape.com/scroll", "/api/quotes")
+    .steps([Step::scroll_to_bottom(), Step::wait(1500)])
+    .await?;
+for call in &page.xhr {
+    if call.status == 200 {
+        println!("{} {}", call.url, call.json()?["quotes"][0]["text"]);
+    }
+}
+```
+
+Each `XhrCall` has `url`, `method`, `status`, `content_type`, `body` (text) and
+`body_omitted` (why there is no body). Up to 20 responses and 10 MB of bodies;
+`page.xhr_truncated` is `true` when more matched. When the site answers every
+matching call with 403 or 429, the request fails like a block and
+is not billed.
+
 ## Images
 
 ```rust
@@ -231,7 +259,7 @@ Enable the `blocking` feature for code without an async runtime. Same methods,
 finish a request with `.send()`:
 
 ```toml
-scrapeunblocker = { version = "0.19", features = ["blocking"] }
+scrapeunblocker = { version = "0.20", features = ["blocking"] }
 ```
 
 ```rust
@@ -307,7 +335,7 @@ The default TLS backend is reqwest's default. To choose another, turn off
 default features:
 
 ```toml
-scrapeunblocker = { version = "0.19", default-features = false, features = ["rustls"] }  # or "native-tls"
+scrapeunblocker = { version = "0.20", default-features = false, features = ["rustls"] }  # or "native-tls"
 ```
 
 ## Links

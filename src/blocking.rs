@@ -21,8 +21,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::client::{
-    ClientBuilder, GetImage, GetMarkdown, GetPageSource, GetPageWithCookies, GetParsed,
-    ListElements, Plugin, Serp,
+    ClientBuilder, GetImage, GetMarkdown, GetPageSource, GetPageWithCookies, GetPageWithXhr,
+    GetParsed, ListElements, Plugin, Serp,
 };
 use crate::error::{Error, Result};
 use crate::request::{Call, Decode};
@@ -96,6 +96,16 @@ impl Client {
     /// Fetch a URL with its cookies and proxy. See [`crate::Client::get_page_with_cookies`].
     pub fn get_page_with_cookies(&self, url: impl Into<String>) -> GetPageWithCookies<Client> {
         GetPageWithCookies::new(self.clone(), url.into())
+    }
+
+    /// Fetch a URL with the page's own XHR/fetch responses. See
+    /// [`crate::Client::get_page_with_xhr`].
+    pub fn get_page_with_xhr(
+        &self,
+        url: impl Into<String>,
+        capture_xhr: impl Into<String>,
+    ) -> GetPageWithXhr<Client> {
+        GetPageWithXhr::new(self.clone(), url.into(), capture_xhr.into())
     }
 
     /// Run a Google search. See [`crate::Client::serp`].

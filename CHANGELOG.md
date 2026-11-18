@@ -3,6 +3,18 @@
 Versions follow the other ScrapeUnblocker SDKs (Python, Node.js, Ruby, PHP), so
 the same version number means the same API surface.
 
+## 0.20.0 (2026-11-18)
+
+- New `get_page_with_xhr(url, capture_xhr)` (async and blocking) for the API's `capture_xhr`
+  parameter: the page is rendered in a real browser and every XHR/fetch response whose URL
+  contains the fragment comes back as a `CapturedPage` (`html`, `xhr` - `XhrCall` with `url`,
+  `method`, `status`, `content_type`, `body`, `body_omitted` and a `json()` helper -,
+  `xhr_truncated`, `proxy`). The builder takes `proxy_country` and `steps`.
+- `StepFailure::xhr` holds the responses the page received before a step failed, when the call
+  used `capture_xhr`.
+
+No breaking changes.
+
 ## 0.19.0
 
 First release of the Rust client.

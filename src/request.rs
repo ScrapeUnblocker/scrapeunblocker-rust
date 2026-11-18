@@ -7,7 +7,7 @@ use std::pin::Pin;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::models::{PageResult, ParsedPage};
+use crate::models::{CapturedPage, PageResult, ParsedPage};
 
 /// The future a request builder turns into when awaited.
 ///
@@ -99,6 +99,12 @@ impl Decode for ParsedPage {
 impl Decode for PageResult {
     fn decode(body: Vec<u8>) -> Result<Self> {
         Value::decode(body).map(PageResult::from_value)
+    }
+}
+
+impl Decode for CapturedPage {
+    fn decode(body: Vec<u8>) -> Result<Self> {
+        Value::decode(body).map(CapturedPage::from_value)
     }
 }
 
