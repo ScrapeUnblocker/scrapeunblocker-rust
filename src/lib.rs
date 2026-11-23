@@ -66,11 +66,11 @@ pub mod blocking;
 
 pub use client::{
     Client, ClientBuilder, GetImage, GetMarkdown, GetPageSource, GetPageWithCookies,
-    GetPageWithXhr, GetParsed, ListElements, Plugin, Serp, API_KEY_ENV, DEFAULT_BASE_URL,
-    DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, VERSION,
+    GetPageWithHeaders, GetPageWithXhr, GetParsed, ListElements, Plugin, Serp, API_KEY_ENV,
+    DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, VERSION,
 };
 pub use error::{ApiError, ApiErrorKind, Error, Result, StepFailure, TargetNotFound};
-pub use models::{CapturedPage, PageResult, ParsedPage, Step, XhrCall};
+pub use models::{CapturedPage, HeaderValues, PageHeaders, PageResult, ParsedPage, Step, XhrCall};
 pub use request::ResponseFuture;
 
 pub use serde_json;

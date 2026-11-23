@@ -9,7 +9,7 @@ use reqwest::Url;
 use serde_json::Value;
 
 use crate::error::{api_error, Error, Result};
-use crate::models::{CapturedPage, PageResult, ParsedPage, Step};
+use crate::models::{CapturedPage, PageHeaders, PageResult, ParsedPage, Step};
 use crate::request::{executable, Call, Decode};
 
 /// The production API host.
@@ -318,6 +318,23 @@ impl Client {
         GetPageWithCookies::new(self.clone(), url.into())
     }
 
+    /// Fetch a URL and also return the target's own status code, the URL it
+    /// ended on after redirects, its response headers and the request headers
+    /// that were actually sent, as a [`PageHeaders`].
+    ///
+    /// Useful where a plain proxy used to be: redirects, cache headers and
+    /// `set-cookie` stay visible. A target's own 401, 451 or 5xx page is
+    /// delivered (billed) with that status on
+    /// [`status_code`](PageHeaders::status_code). A target 404 or 410 fails
+    /// with [`ApiErrorKind::TargetNotFound`](crate::ApiErrorKind::TargetNotFound)
+    /// like [`get_page_source`](Self::get_page_source); the full JSON, headers
+    /// included, is on [`ApiError::body`](crate::ApiError::body).
+    ///
+    /// Calls `POST /getPageSource` with `get_headers=true`.
+    pub fn get_page_with_headers(&self, url: impl Into<String>) -> GetPageWithHeaders {
+        GetPageWithHeaders::new(self.clone(), url.into())
+    }
+
     /// Fetch a URL and return the page's own XHR/fetch responses with it.
     ///
     /// Many sites render from a JSON API the page calls itself, and that API
@@ -581,6 +598,48 @@ impl<C> GetPageWithCookies<C> {
 }
 
 executable!(GetPageWithCookies -> PageResult);
+
+/// Request builder for [`Client::get_page_with_headers`]. Await it for a [`PageHeaders`].
+#[derive(Debug, Clone)]
+#[must_use = "a request does nothing until it is awaited or sent"]
+pub struct GetPageWithHeaders<C = Client> {
+    client: C,
+    call: Call,
+}
+
+impl<C> GetPageWithHeaders<C> {
+    pub(crate) fn new(client: C, url: String) -> Self {
+        let mut call = Call::new("/getPageSource");
+        call.query.set("url", url);
+        call.query.set("get_headers", true);
+        GetPageWithHeaders { client, call }
+    }
+
+    /// Also return the cookies set during the visit, on
+    /// [`PageHeaders::cookies`].
+    pub fn get_cookies(mut self, get_cookies: bool) -> Self {
+        if get_cookies {
+            self.call.query.set("get_cookies", true);
+        } else {
+            self.call.query.remove("get_cookies");
+        }
+        self
+    }
+
+    /// ISO country code to route the request through, e.g. `"us"`.
+    pub fn proxy_country(mut self, country: impl Into<String>) -> Self {
+        self.call.query.set("proxy_country", country.into());
+        self
+    }
+
+    /// Extra seconds to wait after the page loads, before capture.
+    pub fn time_sleep(mut self, seconds: u32) -> Self {
+        self.call.query.set("time_sleep", seconds);
+        self
+    }
+}
+
+executable!(GetPageWithHeaders -> PageHeaders);
 
 /// Request builder for [`Client::get_page_with_xhr`]. Await it for a [`CapturedPage`].
 #[derive(Debug, Clone)]

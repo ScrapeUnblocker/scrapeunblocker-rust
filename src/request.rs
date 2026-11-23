@@ -7,7 +7,7 @@ use std::pin::Pin;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::models::{CapturedPage, PageResult, ParsedPage};
+use crate::models::{CapturedPage, PageHeaders, PageResult, ParsedPage};
 
 /// The future a request builder turns into when awaited.
 ///
@@ -26,6 +26,11 @@ impl Query {
     pub(crate) fn set(&mut self, key: &str, value: impl ToString) {
         self.0.retain(|(k, _)| k != key);
         self.0.push((key.to_owned(), value.to_string()));
+    }
+
+    /// Drop a parameter, so the API's default applies.
+    pub(crate) fn remove(&mut self, key: &str) {
+        self.0.retain(|(k, _)| k != key);
     }
 
     /// A repeated parameter: one `key=value` pair per item.
@@ -105,6 +110,12 @@ impl Decode for PageResult {
 impl Decode for CapturedPage {
     fn decode(body: Vec<u8>) -> Result<Self> {
         Value::decode(body).map(CapturedPage::from_value)
+    }
+}
+
+impl Decode for PageHeaders {
+    fn decode(body: Vec<u8>) -> Result<Self> {
+        Value::decode(body).map(PageHeaders::from_value)
     }
 }
 

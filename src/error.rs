@@ -197,8 +197,9 @@ impl std::error::Error for ApiError {}
 pub struct TargetNotFound {
     /// The status the target answered with (404 or 410).
     pub origin_status: u16,
-    /// The target's own not-found page as served (can be empty), or `None`
-    /// when the response body was a parsed-data JSON payload.
+    /// The target's own not-found page as served (can be empty). When the call
+    /// answers JSON (parsed data, cookies, headers), the `html` field of that
+    /// JSON, or `None` when it has none.
     pub html: Option<String>,
     /// The URL the target answered for, when the API sent it.
     pub destination_url: Option<String>,

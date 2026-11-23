@@ -3,6 +3,18 @@
 Versions follow the other ScrapeUnblocker SDKs (Python, Node.js, Ruby, PHP), so
 the same version number means the same API surface.
 
+## 0.21.0 (2026-11-23)
+
+- New `get_page_with_headers(url)` (async and blocking) for the API's `get_headers`
+  parameter: returns a `PageHeaders` with `html`, the target's own `status_code`,
+  `final_url` after redirects, the target's response `headers` (lowercase names,
+  `HeaderValues::One` or `HeaderValues::Many` - `set-cookie` is always a list),
+  the `request_headers` actually sent, `proxy`, `cookies` (with `get_cookies(true)`)
+  and `raw`. `PageHeaders::header(name)` looks a header up in any letter case. The
+  builder takes `get_cookies`, `proxy_country` and `time_sleep`.
+
+No breaking changes.
+
 ## 0.20.0 (2026-11-18)
 
 - New `get_page_with_xhr(url, capture_xhr)` (async and blocking) for the API's `capture_xhr`

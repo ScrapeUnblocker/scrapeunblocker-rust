@@ -1,5 +1,7 @@
 //! Return types for structured responses and the browser [`Step`] builder.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -73,6 +75,112 @@ impl PageResult {
             proxy: first(&["proxy", "proxy_address"]),
             raw: payload,
         }
+    }
+}
+
+/// The value of one response header in [`PageHeaders::headers`].
+///
+/// A header the target sent more than once comes back joined with `", "` as
+/// one string, except `set-cookie`, which is always a list (a cookie's
+/// `Expires` date has a comma of its own, so joining would break it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeaderValues {
+    /// One string: a header sent once, or repeats joined with `", "`.
+    One(String),
+    /// Every value on its own (`set-cookie`).
+    Many(Vec<String>),
+}
+
+impl HeaderValues {
+    fn from_value(value: &Value) -> Option<Self> {
+        match value {
+            Value::String(s) => Some(HeaderValues::One(s.clone())),
+            Value::Array(items) => Some(HeaderValues::Many(
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+            )),
+            _ => None,
+        }
+    }
+
+    /// The value as one string; `None` for a list.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            HeaderValues::One(s) => Some(s),
+            HeaderValues::Many(_) => None,
+        }
+    }
+
+    /// Every value: one item for a single string, each item of a list.
+    pub fn values(&self) -> &[String] {
+        match self {
+            HeaderValues::One(s) => std::slice::from_ref(s),
+            HeaderValues::Many(items) => items,
+        }
+    }
+}
+
+/// A page plus the target's own status, final URL and headers, from
+/// [`Client::get_page_with_headers`](crate::Client::get_page_with_headers).
+///
+/// Each field the render path could not observe is `None`.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct PageHeaders {
+    /// The rendered page.
+    pub html: Option<String>,
+    /// The status the target answered with, e.g. `200`, or `401` for a
+    /// target's own refusal page.
+    pub status_code: Option<u16>,
+    /// The URL the target answered for, after redirects.
+    pub final_url: Option<String>,
+    /// The target's response headers. Names are lowercase; see [`HeaderValues`].
+    pub headers: Option<BTreeMap<String, HeaderValues>>,
+    /// The headers actually sent to the target. Names are lowercase.
+    pub request_headers: Option<BTreeMap<String, String>>,
+    /// Country of the exit that served the request (lowercase ISO-2).
+    pub proxy: Option<String>,
+    /// The cookies set during the visit, as the API returned them; `None`
+    /// unless the request asked for them with
+    /// [`get_cookies`](crate::GetPageWithHeaders::get_cookies).
+    pub cookies: Option<Value>,
+    /// The full JSON payload as returned by the API.
+    pub raw: Value,
+}
+
+impl PageHeaders {
+    pub(crate) fn from_value(payload: Value) -> Self {
+        let text = |key: &str| payload.get(key).and_then(Value::as_str).map(str::to_owned);
+        let object = |key: &str| payload.get(key).and_then(Value::as_object);
+        PageHeaders {
+            html: text("html"),
+            status_code: payload
+                .get("status_code")
+                .and_then(Value::as_u64)
+                .and_then(|s| u16::try_from(s).ok()),
+            final_url: text("final_url"),
+            headers: object("headers").map(|map| {
+                map.iter()
+                    .filter_map(|(k, v)| Some((k.clone(), HeaderValues::from_value(v)?)))
+                    .collect()
+            }),
+            request_headers: object("request_headers").map(|map| {
+                map.iter()
+                    .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_owned())))
+                    .collect()
+            }),
+            proxy: text("proxy"),
+            cookies: payload.get("cookies").filter(|v| !v.is_null()).cloned(),
+            raw: payload,
+        }
+    }
+
+    /// A response header by name, in any letter case.
+    pub fn header(&self, name: &str) -> Option<&HeaderValues> {
+        self.headers.as_ref()?.get(&name.to_ascii_lowercase())
     }
 }
 

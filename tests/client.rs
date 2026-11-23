@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use scrapeunblocker::{ApiErrorKind, Client, Error, Step};
+use scrapeunblocker::{ApiErrorKind, Client, Error, HeaderValues, Step};
 use serde_json::json;
 use wiremock::matchers::{header, method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -522,6 +522,13 @@ fn blocking_client_sends_the_same_request() {
             .mount(&server)
             .await;
         Mock::given(path("/getPageSource"))
+            .and(query_param("get_headers", "true"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"html": "h", "status_code": 200})),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(path("/getPageSource"))
             .respond_with(ResponseTemplate::new(200).set_body_string("blocking html"))
             .mount(&server)
             .await;
@@ -541,6 +548,11 @@ fn blocking_client_sends_the_same_request() {
         .send()
         .unwrap();
     assert_eq!(data["results"][0], 1);
+    let page = su
+        .get_page_with_headers("https://example.com")
+        .send()
+        .unwrap();
+    assert_eq!(page.status_code, Some(200));
 }
 
 #[tokio::test]
@@ -612,4 +624,135 @@ async fn step_failure_with_capture_carries_the_calls() {
         .unwrap()
         .xhr
         .is_none());
+}
+
+#[tokio::test]
+async fn get_page_with_headers_returns_status_url_and_headers() {
+    let server = MockServer::start().await;
+    let payload = json!({
+        "html": "<!DOCTYPE html><html>ok</html>",
+        "status_code": 200,
+        "final_url": "https://www.example.com/",
+        "headers": {
+            "content-type": "text/html",
+            "set-cookie": ["a=1; Path=/", "b=2"],
+            "vary": "Accept, Cookie"
+        },
+        "request_headers": {"user-agent": "Mozilla/5.0", "accept": "text/html"},
+        "proxy": "us"
+    });
+    Mock::given(method("POST"))
+        .and(path("/getPageSource"))
+        .and(query_param("url", "https://example.com/"))
+        .and(query_param("get_headers", "true"))
+        .and(query_param("proxy_country", "us"))
+        .and(query_param("time_sleep", "1"))
+        .and(query_param_is_missing("get_cookies"))
+        .and(query_param_is_missing("parsed_data"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&payload))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let su = client(&server).await;
+    let page = su
+        .get_page_with_headers("https://example.com/")
+        .proxy_country("us")
+        .time_sleep(1)
+        .get_cookies(true)
+        .get_cookies(false)
+        .await
+        .unwrap();
+    assert_eq!(page.html.as_deref(), Some("<!DOCTYPE html><html>ok</html>"));
+    assert_eq!(page.status_code, Some(200));
+    assert_eq!(page.final_url.as_deref(), Some("https://www.example.com/"));
+    assert_eq!(page.proxy.as_deref(), Some("us"));
+    assert_eq!(page.cookies, None);
+    assert_eq!(page.raw, payload);
+
+    let content_type = page.header("Content-Type").unwrap();
+    assert_eq!(content_type, &HeaderValues::One("text/html".to_owned()));
+    assert_eq!(content_type.as_str(), Some("text/html"));
+    assert_eq!(page.header("vary").unwrap().values(), ["Accept, Cookie"]);
+    let cookies = page.header("set-cookie").unwrap();
+    assert_eq!(cookies.as_str(), None);
+    assert_eq!(cookies.values(), ["a=1; Path=/", "b=2"]);
+    assert!(page.header("x-missing").is_none());
+
+    let sent = page.request_headers.as_ref().unwrap();
+    assert_eq!(sent["user-agent"], "Mozilla/5.0");
+    assert_eq!(sent.len(), 2);
+}
+
+#[tokio::test]
+async fn get_page_with_headers_with_cookies_and_null_fields() {
+    let server = MockServer::start().await;
+    // A target's own 401 page: HTTP 200 from the API, the target's status in the JSON.
+    Mock::given(path("/getPageSource"))
+        .and(query_param("get_headers", "true"))
+        .and(query_param("get_cookies", "true"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("x-origin-status", "401")
+                .set_body_json(json!({
+                    "html": "<h1>Unauthorized</h1>",
+                    "cookies": [{"name": "sid", "value": "1"}],
+                    "status_code": 401,
+                    "final_url": null,
+                    "headers": null,
+                    "request_headers": null,
+                    "proxy": null
+                })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let su = client(&server).await;
+    let page = su
+        .get_page_with_headers("https://example.com/private")
+        .get_cookies(true)
+        .await
+        .unwrap();
+    assert_eq!(page.status_code, Some(401));
+    assert_eq!(page.html.as_deref(), Some("<h1>Unauthorized</h1>"));
+    assert_eq!(page.cookies.as_ref().unwrap()[0]["name"], "sid");
+    assert_eq!(page.final_url, None);
+    assert_eq!(page.headers, None);
+    assert_eq!(page.request_headers, None);
+    assert_eq!(page.proxy, None);
+    assert!(page.header("content-type").is_none());
+}
+
+#[tokio::test]
+async fn get_page_with_headers_target_not_found_keeps_the_json() {
+    let server = MockServer::start().await;
+    let body = json!({
+        "html": "<html>gone</html>", "status_code": 410,
+        "final_url": "https://example.com/x", "headers": {"server": "nginx"},
+        "request_headers": null, "proxy": "de"
+    });
+    Mock::given(path("/getPageSource"))
+        .and(query_param("get_headers", "true"))
+        .respond_with(
+            ResponseTemplate::new(410)
+                .insert_header("x-origin-status", "410")
+                .insert_header("x-destination-url", "https://example.com/x")
+                .set_body_json(&body),
+        )
+        .mount(&server)
+        .await;
+
+    let err = client(&server)
+        .await
+        .get_page_with_headers("https://example.com/x")
+        .await
+        .unwrap_err();
+    let api = err.api().unwrap();
+    assert_eq!(api.kind, ApiErrorKind::TargetNotFound);
+    let target = api.target_not_found.as_ref().unwrap();
+    assert_eq!(target.origin_status, 410);
+    assert_eq!(target.html.as_deref(), Some("<html>gone</html>"));
+    let json: serde_json::Value = serde_json::from_str(api.body.as_deref().unwrap()).unwrap();
+    assert_eq!(json["headers"]["server"], "nginx");
 }

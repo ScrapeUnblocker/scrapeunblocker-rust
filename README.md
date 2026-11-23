@@ -207,6 +207,35 @@ let page = su.get_page_with_cookies("https://example.com").await?;
 println!("{:?} {} {:?}", page.html, page.cookies, page.proxy);
 ```
 
+## Target status, final URL and headers
+
+`get_page_with_headers` returns the page with what a plain proxy would have
+shown you: the target's own status code, the URL it ended on after redirects,
+its response headers and the request headers that were actually sent.
+
+```rust
+let page = su
+    .get_page_with_headers("https://example.com")
+    .get_cookies(true) // optional: also return the cookies
+    .await?;
+println!("{:?} {:?} {:?}", page.status_code, page.final_url, page.proxy);
+if let Some(ct) = page.header("content-type").and_then(|v| v.as_str()) {
+    println!("content-type: {ct}");
+}
+if let Some(cookies) = page.header("set-cookie") {
+    for cookie in cookies.values() {
+        println!("set-cookie: {cookie}");
+    }
+}
+```
+
+Header names are lowercase. A header sent more than once is joined with `", "`,
+except `set-cookie`, which is always a list: each value is a `HeaderValues`
+(`One` or `Many`). Fields the render path could not observe are `None`. A
+target's own 401, 451 or 5xx page comes back with that `status_code` (billed);
+a target 404 or 410 is `ApiErrorKind::TargetNotFound`, with the full JSON on
+`ApiError::body`.
+
 ## The page's own API calls (XHR/fetch)
 
 Many sites render from a JSON API the page calls itself, and that API often
@@ -259,7 +288,7 @@ Enable the `blocking` feature for code without an async runtime. Same methods,
 finish a request with `.send()`:
 
 ```toml
-scrapeunblocker = { version = "0.20", features = ["blocking"] }
+scrapeunblocker = { version = "0.21", features = ["blocking"] }
 ```
 
 ```rust
@@ -335,7 +364,7 @@ The default TLS backend is reqwest's default. To choose another, turn off
 default features:
 
 ```toml
-scrapeunblocker = { version = "0.20", default-features = false, features = ["rustls"] }  # or "native-tls"
+scrapeunblocker = { version = "0.21", default-features = false, features = ["rustls"] }  # or "native-tls"
 ```
 
 ## Links
