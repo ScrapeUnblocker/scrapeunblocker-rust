@@ -3,6 +3,22 @@
 Versions follow the other ScrapeUnblocker SDKs (Python, Node.js, Ruby, PHP), so
 the same version number means the same API surface.
 
+## 0.22.0 (2026-11-23)
+
+- Sticky sessions: `GetPageSource`, `GetMarkdown`, `ListElements`, `GetParsed`,
+  `GetPageWithCookies`, `GetPageWithHeaders` and `GetPageWithXhr` (async and blocking)
+  have a new `.session(id)` setter for the API's `session` parameter. Calls with the
+  same id (1-64 letters, digits, `_`, `.`, `-`) leave through the same proxy IP while
+  the session is in use (it expires after 10 minutes without calls). The parameter is
+  only sent when set.
+- `ParsedPage`, `PageResult`, `PageHeaders` and `CapturedPage` have a new
+  `session_changed` field: `true` when the API answered with `X-Session-Changed: true`,
+  i.e. the call was answered through another IP than the session's. `get_page_source`,
+  `get_markdown` and `list_elements` still return a `String` / `Value`; use another
+  builder when you need the flag.
+
+No breaking changes.
+
 ## 0.21.0 (2026-11-23)
 
 - New `get_page_with_headers(url)` (async and blocking) for the API's `get_headers`

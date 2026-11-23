@@ -238,6 +238,8 @@ impl Client {
             };
             let origin_status = header("x-origin-status");
             let destination_url = header("x-destination-url");
+            // A sticky session call answered through another IP than the session's.
+            let session_changed = header("x-session-changed").is_some_and(|v| v.trim() == "true");
             let success = response.status().is_success();
             let body = response.bytes().await.map_err(|e| {
                 if e.is_timeout() {
@@ -248,7 +250,7 @@ impl Client {
             })?;
 
             if success {
-                return T::decode(body.to_vec());
+                return T::decode_response(body.to_vec(), session_changed);
             }
             let text = String::from_utf8_lossy(&body).into_owned();
             return Err(api_error(
@@ -404,6 +406,31 @@ impl Client {
 
 // -- request builders -----------------------------------------------------
 
+/// Setter for a sticky session. `$changed` says where the builder's result
+/// reports a moved session.
+macro_rules! session_setter {
+    ($changed:literal) => {
+        /// Sticky session id: 1-64 letters, digits, `_`, `.` or `-` (anything
+        /// else fails with HTTP 422). Calls with the same id leave through the
+        /// same proxy IP while the session is in use; it expires after 10
+        /// minutes without calls and belongs to your API key only.
+        ///
+        /// When that IP cannot get the page, the call is answered through
+        /// another IP, the response carries `X-Session-Changed: true`, and the
+        /// session moves to the new IP. Up to 4 calls of one session run on its
+        /// IP at once; more parallel calls are answered through other IPs
+        /// (flagged the same way) without moving the session. A call that names
+        /// a different [`proxy_country`](Self::proxy_country) than the
+        /// session's gets a new IP in that country (flagged).
+        ///
+        #[doc = $changed]
+        pub fn session(mut self, id: impl Into<String>) -> Self {
+            self.call.query.set("session", id.into());
+            self
+        }
+    };
+}
+
 /// Setters shared by the page-rendering builders.
 macro_rules! page_setters {
     () => {
@@ -469,6 +496,9 @@ impl<C> GetPageSource<C> {
 
     page_setters!();
     steps_setter!();
+    session_setter!("The result carries no response headers, so it cannot say whether the \
+session's IP changed; when you need to know, use a request whose result has \
+`session_changed`, such as [`Client::get_page_with_headers`](crate::Client::get_page_with_headers).");
 }
 
 executable!(GetPageSource -> String);
@@ -490,6 +520,9 @@ impl<C> ListElements<C> {
     }
 
     page_setters!();
+    session_setter!("The result carries no response headers, so it cannot say whether the \
+session's IP changed; when you need to know, use a request whose result has \
+`session_changed`, such as [`Client::get_page_with_headers`](crate::Client::get_page_with_headers).");
 }
 
 executable!(ListElements -> Value);
@@ -520,6 +553,9 @@ impl<C> GetMarkdown<C> {
 
     page_setters!();
     steps_setter!();
+    session_setter!("The result carries no response headers, so it cannot say whether the \
+session's IP changed; when you need to know, use a request whose result has \
+`session_changed`, such as [`Client::get_page_with_headers`](crate::Client::get_page_with_headers).");
 }
 
 executable!(GetMarkdown -> String);
@@ -564,6 +600,11 @@ impl<C> GetParsed<C> {
         self.call.query.set("time_sleep", seconds);
         self
     }
+
+    session_setter!(
+        "[`ParsedPage::session_changed`](crate::ParsedPage::session_changed) says whether the \
+session's IP changed on this call."
+    );
 }
 
 executable!(GetParsed -> ParsedPage);
@@ -595,6 +636,11 @@ impl<C> GetPageWithCookies<C> {
         self.call.query.set("time_sleep", seconds);
         self
     }
+
+    session_setter!(
+        "[`PageResult::session_changed`](crate::PageResult::session_changed) says whether the \
+session's IP changed on this call."
+    );
 }
 
 executable!(GetPageWithCookies -> PageResult);
@@ -637,6 +683,11 @@ impl<C> GetPageWithHeaders<C> {
         self.call.query.set("time_sleep", seconds);
         self
     }
+
+    session_setter!(
+        "[`PageHeaders::session_changed`](crate::PageHeaders::session_changed) says whether the \
+session's IP changed on this call."
+    );
 }
 
 executable!(GetPageWithHeaders -> PageHeaders);
@@ -664,6 +715,10 @@ impl<C> GetPageWithXhr<C> {
     }
 
     steps_setter!();
+    session_setter!(
+        "[`CapturedPage::session_changed`](crate::CapturedPage::session_changed) says whether the \
+session's IP changed on this call."
+    );
 }
 
 executable!(GetPageWithXhr -> CapturedPage);

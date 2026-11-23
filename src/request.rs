@@ -74,6 +74,14 @@ impl Call {
 /// How a successful response body becomes a builder's output.
 pub(crate) trait Decode: Sized + Send + 'static {
     fn decode(body: Vec<u8>) -> Result<Self>;
+
+    /// Decode a successful response, told whether it carried
+    /// `X-Session-Changed: true`. Types with a `session_changed` field
+    /// override this; the rest ignore the flag.
+    fn decode_response(body: Vec<u8>, session_changed: bool) -> Result<Self> {
+        let _ = session_changed;
+        Self::decode(body)
+    }
 }
 
 impl Decode for String {
@@ -97,25 +105,49 @@ impl Decode for Value {
 
 impl Decode for ParsedPage {
     fn decode(body: Vec<u8>) -> Result<Self> {
-        Value::decode(body).map(ParsedPage::from_value)
+        Self::decode_response(body, false)
+    }
+
+    fn decode_response(body: Vec<u8>, session_changed: bool) -> Result<Self> {
+        let mut page = ParsedPage::from_value(Value::decode(body)?);
+        page.session_changed = session_changed;
+        Ok(page)
     }
 }
 
 impl Decode for PageResult {
     fn decode(body: Vec<u8>) -> Result<Self> {
-        Value::decode(body).map(PageResult::from_value)
+        Self::decode_response(body, false)
+    }
+
+    fn decode_response(body: Vec<u8>, session_changed: bool) -> Result<Self> {
+        let mut page = PageResult::from_value(Value::decode(body)?);
+        page.session_changed = session_changed;
+        Ok(page)
     }
 }
 
 impl Decode for CapturedPage {
     fn decode(body: Vec<u8>) -> Result<Self> {
-        Value::decode(body).map(CapturedPage::from_value)
+        Self::decode_response(body, false)
+    }
+
+    fn decode_response(body: Vec<u8>, session_changed: bool) -> Result<Self> {
+        let mut page = CapturedPage::from_value(Value::decode(body)?);
+        page.session_changed = session_changed;
+        Ok(page)
     }
 }
 
 impl Decode for PageHeaders {
     fn decode(body: Vec<u8>) -> Result<Self> {
-        Value::decode(body).map(PageHeaders::from_value)
+        Self::decode_response(body, false)
+    }
+
+    fn decode_response(body: Vec<u8>, session_changed: bool) -> Result<Self> {
+        let mut page = PageHeaders::from_value(Value::decode(body)?);
+        page.session_changed = session_changed;
+        Ok(page)
     }
 }
 

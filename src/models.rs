@@ -24,6 +24,10 @@ pub struct ParsedPage {
     pub html: Option<String>,
     /// The API's explanation when `data_extracted` is `false`.
     pub detail: Option<String>,
+    /// `true` when the request named a sticky
+    /// [`session`](crate::GetParsed::session) and the API answered it through
+    /// another IP than the session's (the `X-Session-Changed` header).
+    pub session_changed: bool,
 }
 
 impl ParsedPage {
@@ -42,6 +46,7 @@ impl ParsedPage {
             html: text(&payload, "html"),
             detail: text(&payload, "detail"),
             raw: payload,
+            session_changed: false,
         }
     }
 }
@@ -59,6 +64,10 @@ pub struct PageResult {
     pub proxy: Option<String>,
     /// The full JSON payload as returned by the API.
     pub raw: Value,
+    /// `true` when the request named a sticky
+    /// [`session`](crate::GetPageWithCookies::session) and the API answered it through
+    /// another IP than the session's (the `X-Session-Changed` header).
+    pub session_changed: bool,
 }
 
 impl PageResult {
@@ -74,6 +83,7 @@ impl PageResult {
             cookies: payload.get("cookies").cloned().unwrap_or(Value::Null),
             proxy: first(&["proxy", "proxy_address"]),
             raw: payload,
+            session_changed: false,
         }
     }
 }
@@ -149,6 +159,10 @@ pub struct PageHeaders {
     pub cookies: Option<Value>,
     /// The full JSON payload as returned by the API.
     pub raw: Value,
+    /// `true` when the request named a sticky
+    /// [`session`](crate::GetPageWithHeaders::session) and the API answered it through
+    /// another IP than the session's (the `X-Session-Changed` header).
+    pub session_changed: bool,
 }
 
 impl PageHeaders {
@@ -175,6 +189,7 @@ impl PageHeaders {
             proxy: text("proxy"),
             cookies: payload.get("cookies").filter(|v| !v.is_null()).cloned(),
             raw: payload,
+            session_changed: false,
         }
     }
 
@@ -242,6 +257,10 @@ pub struct CapturedPage {
     pub proxy: Option<String>,
     /// The full JSON payload as returned by the API.
     pub raw: Value,
+    /// `true` when the request named a sticky
+    /// [`session`](crate::GetPageWithXhr::session) and the API answered it through
+    /// another IP than the session's (the `X-Session-Changed` header).
+    pub session_changed: bool,
 }
 
 impl CapturedPage {
@@ -258,6 +277,7 @@ impl CapturedPage {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
             raw: payload,
+            session_changed: false,
         }
     }
 }

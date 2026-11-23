@@ -756,3 +756,149 @@ async fn get_page_with_headers_target_not_found_keeps_the_json() {
     let json: serde_json::Value = serde_json::from_str(api.body.as_deref().unwrap()).unwrap();
     assert_eq!(json["headers"]["server"], "nginx");
 }
+
+/// A body every getPageSource request builder can decode.
+fn session_page() -> serde_json::Value {
+    json!({
+        "html": "<html>ok</html>",
+        "data": {"page_type": "product", "source": "schema.org", "data": {}},
+        "cookies": [],
+        "xhr": [],
+        "status_code": 200,
+        "proxy": "us"
+    })
+}
+
+#[tokio::test]
+async fn session_is_sent_only_when_given() {
+    let server = MockServer::start().await;
+    Mock::given(path("/getPageSource"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_page()))
+        .mount(&server)
+        .await;
+    let su = client(&server).await;
+    let url = "https://example.com/";
+
+    for id in [Some("cart-42.a_b"), None] {
+        match id {
+            Some(id) => {
+                su.get_page_source(url).session(id).await.unwrap();
+                su.list_elements(url).session(id).await.unwrap();
+                su.get_markdown(url).session(id).await.unwrap();
+                su.get_parsed(url).session(id).await.unwrap();
+                su.get_page_with_cookies(url).session(id).await.unwrap();
+                su.get_page_with_headers(url).session(id).await.unwrap();
+                su.get_page_with_xhr(url, "/api").session(id).await.unwrap();
+            }
+            None => {
+                su.get_page_source(url).await.unwrap();
+                su.list_elements(url).await.unwrap();
+                su.get_markdown(url).await.unwrap();
+                su.get_parsed(url).await.unwrap();
+                su.get_page_with_cookies(url).await.unwrap();
+                su.get_page_with_headers(url).await.unwrap();
+                su.get_page_with_xhr(url, "/api").await.unwrap();
+            }
+        }
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 14);
+    for req in &requests[..7] {
+        assert_eq!(query_values(req, "session"), ["cart-42.a_b"], "{}", req.url);
+    }
+    for req in &requests[7..] {
+        assert!(query_values(req, "session").is_empty(), "{}", req.url);
+    }
+}
+
+#[tokio::test]
+async fn session_combines_with_other_options() {
+    let server = MockServer::start().await;
+    Mock::given(path("/getPageSource"))
+        .and(query_param("session", "s1"))
+        .and(query_param("proxy_country", "de"))
+        .and(query_param("steps", r#"[{"action":"wait","value":500}]"#))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>ok</html>"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let su = client(&server).await;
+    let html = su
+        .get_page_source("https://example.com/")
+        .session("s1")
+        .proxy_country("de")
+        .steps([Step::wait(500)])
+        .await
+        .unwrap();
+    assert_eq!(html, "<html>ok</html>");
+}
+
+#[tokio::test]
+async fn session_changed_comes_from_the_header() {
+    let server = MockServer::start().await;
+    for (id, value) in [("moved", Some("true")), ("other", Some("false"))] {
+        let mut response = ResponseTemplate::new(200).set_body_json(session_page());
+        if let Some(value) = value {
+            response = response.insert_header("X-Session-Changed", value);
+        }
+        Mock::given(path("/getPageSource"))
+            .and(query_param("session", id))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+    }
+    Mock::given(path("/getPageSource"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(session_page()))
+        .mount(&server)
+        .await;
+    let su = client(&server).await;
+    let url = "https://example.com/";
+
+    for (id, expected) in [("moved", true), ("kept", false), ("other", false)] {
+        let parsed = su.get_parsed(url).session(id).await.unwrap();
+        let cookies = su.get_page_with_cookies(url).session(id).await.unwrap();
+        let headers = su.get_page_with_headers(url).session(id).await.unwrap();
+        let xhr = su.get_page_with_xhr(url, "/api").session(id).await.unwrap();
+        assert_eq!(parsed.session_changed, expected, "get_parsed {id}");
+        assert_eq!(
+            cookies.session_changed, expected,
+            "get_page_with_cookies {id}"
+        );
+        assert_eq!(
+            headers.session_changed, expected,
+            "get_page_with_headers {id}"
+        );
+        assert_eq!(xhr.session_changed, expected, "get_page_with_xhr {id}");
+    }
+}
+
+#[cfg(feature = "blocking")]
+#[test]
+fn blocking_client_reports_a_moved_session() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let server = runtime.block_on(async {
+        let server = MockServer::start().await;
+        Mock::given(path("/getPageSource"))
+            .and(query_param("session", "s1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-session-changed", "true")
+                    .set_body_json(session_page()),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        server
+    });
+    let su = scrapeunblocker::blocking::Client::from_builder(
+        Client::builder().api_key(KEY).base_url(server.uri()),
+    )
+    .unwrap();
+    let page = su
+        .get_page_with_headers("https://example.com/")
+        .session("s1")
+        .send()
+        .unwrap();
+    assert!(page.session_changed);
+}
